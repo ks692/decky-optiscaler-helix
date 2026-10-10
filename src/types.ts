@@ -519,3 +519,26 @@ export interface LiveApplyResult {
   can_switch_upscaler?: boolean;
   error?: string;
 }
+
+export interface HelixStatus {
+  version: string;
+  ready: boolean;
+  setting_up: boolean;
+  phase: string;
+  message: string;
+}
+
+export interface HelixGame {
+  appid: string;
+  name: string;
+  path: string;
+  ini: string;
+  helix_installed: boolean;
+}
+
+export interface HelixCommands {
+  ok: boolean;
+  launch_option: string;
+  launch_option_lsfg: string;
+  notes: string[];
+}

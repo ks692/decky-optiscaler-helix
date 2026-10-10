@@ -8,6 +8,7 @@ import decky
 sys.path.append(os.path.join(os.path.dirname(__file__), "py_modules"))
 
 from optiscaler.service import OptiScalerService  # noqa: E402
+from helixsr.service import HelixService  # noqa: E402
 
 
 class Plugin:
@@ -20,6 +21,11 @@ class Plugin:
             settings_dir=decky.DECKY_PLUGIN_SETTINGS_DIR,
             runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
             home=decky.HOME,
+            logger=decky.logger,
+        )
+        self.helix = HelixService(
+            home=decky.HOME,
+            state_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
             logger=decky.logger,
         )
         decky.logger.info("payload status: %s", self.service.payload.status())
@@ -194,3 +200,28 @@ class Plugin:
 
     async def set_logging(self, target_dir: str, enabled: bool) -> dict:
         return await self.service.set_logging(target_dir, enabled)
+
+    # -- helixsr -----------------------------------------------------------
+    async def helix_status(self) -> dict:
+        return await self.helix.status()
+
+    async def helix_setup(self) -> dict:
+        return await self.helix.start_setup()
+
+    async def helix_cancel_setup(self) -> dict:
+        return await self.helix.cancel_setup()
+
+    async def helix_setup_log(self) -> dict:
+        return await self.helix.setup_log()
+
+    async def helix_games(self) -> dict:
+        return await self.helix.games()
+
+    async def helix_install(self, ini_dir: str) -> dict:
+        return await self.helix.install(ini_dir)
+
+    async def helix_uninstall(self, ini_dir: str) -> dict:
+        return await self.helix.uninstall(ini_dir)
+
+    async def helix_commands(self) -> dict:
+        return await self.helix.commands()

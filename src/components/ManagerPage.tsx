@@ -13,6 +13,7 @@ import type { Game, PayloadStatus } from "../types";
 import { Notice } from "./Common";
 import { GameDetail } from "./GameDetail";
 import { GamesList } from "./GamesList";
+import { HelixPanel } from "./HelixPanel";
 import { LibraryBrowser } from "./LibraryBrowser";
 import { NowPlaying } from "./NowPlaying";
 import { SettingsTab } from "./SettingsTab";
@@ -206,6 +207,7 @@ export function ManagerPage() {
               ),
             },
             { id: "libraries", title: "Libraries", content: <LibraryBrowser /> },
+            { id: "helixsr", title: "HelixSR", content: <HelixPanel /> },
             // Plugin-wide, so it belongs here rather than in the Quick Access
             // panel: nothing on it is about the game currently running.
             { id: "settings", title: "Settings", content: <SettingsTab status={status} /> },

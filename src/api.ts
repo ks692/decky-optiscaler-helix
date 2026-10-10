@@ -7,6 +7,9 @@ import type {
   GpuInfo,
   Game,
   GameDetail,
+  HelixCommands,
+  HelixGame,
+  HelixStatus,
   Library,
   LiveStatus,
   OptipatcherStatus,
@@ -184,3 +187,12 @@ export const clearLog = callable<[targetDir: string], ActionResult>("clear_log")
 export const setLogging = callable<[targetDir: string, enabled: boolean], ActionResult>(
   "set_logging"
 );
+
+export const helixStatus = callable<[], HelixStatus>("helix_status");
+export const helixSetup = callable<[], ActionResult>("helix_setup");
+export const helixCancelSetup = callable<[], ActionResult>("helix_cancel_setup");
+export const helixSetupLog = callable<[], { ok: boolean; log: string }>("helix_setup_log");
+export const helixGames = callable<[], { ok: boolean; games: HelixGame[] }>("helix_games");
+export const helixInstall = callable<[iniDir: string], ActionResult>("helix_install");
+export const helixUninstall = callable<[iniDir: string], ActionResult>("helix_uninstall");
+export const helixCommands = callable<[], HelixCommands>("helix_commands");
