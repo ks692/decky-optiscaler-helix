@@ -122,8 +122,6 @@ async def main():
               (await service.status())["version"] == C.VERSION)
         check("network footer detected",
               installer.has_network(installer.runtime_dir(state) / C.NVNGX_DLL))
-        check("dll version parsed",
-              installer.dll_version(installer.runtime_dir(state) / C.NVNGX_DLL) == "1.5.1")
         installed = await service.install(str(bindir))
         check("install succeeds", installed["ok"], installed)
         ini_text = (bindir / "OptiScaler.ini").read_text()
@@ -142,11 +140,6 @@ async def main():
         journal = json.loads((bindir / "HelixSR" / C.JOURNAL_NAME).read_text())
         check("journal still holds the true originals",
               journal["previous"].get(C.INI_DX12_KEY) == "auto")
-        check("journal records the dll version",
-              journal.get("helixsr_version") == "1.5.1", journal)
-        gs = await service.game_status(str(bindir))
-        check("game status reports the installed version",
-              gs["ok"] and gs["helixsr_version"] == "1.5.1", gs)
 
         # uninstall restores
         removed = await service.uninstall(str(bindir))

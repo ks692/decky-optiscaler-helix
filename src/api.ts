@@ -198,7 +198,7 @@ export const helixSetUseLatest = callable<
 export const helixGames = callable<[], { ok: boolean; games: HelixGame[] }>("helix_games");
 export const helixGameStatus = callable<
   [targetDir: string],
-  { ok: boolean; installed: boolean; ready: boolean; ini_dir: string | null; helixsr_version: string }
+  { ok: boolean; installed: boolean; ready: boolean; ini_dir: string | null }
 >("helix_game_status");
 export const helixInstall = callable<[iniDir: string], ActionResult>("helix_install");
 export const helixUninstall = callable<[iniDir: string], ActionResult>("helix_uninstall");
