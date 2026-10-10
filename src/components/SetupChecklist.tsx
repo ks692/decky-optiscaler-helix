@@ -62,6 +62,7 @@ import type {
 import { Mono, Notice, Pill } from "./Common";
 import { RemovePrompt } from "./RemovePrompt";
 import { HelixRemovePrompt } from "./HelixRemovePrompt";
+import { HelixSetupLogModal } from "./HelixSetupLogModal";
 
 /**
  * Setting a game up, as a checklist rather than a page of panels.
@@ -165,6 +166,45 @@ function HelixVersionRow({ helix, busy, refresh }: Readonly<{
           void helixSetUseLatest(v).then(() => refresh());
         }}
       />
+    </PanelSectionRow>
+  );
+}
+
+/**
+ * HelixSR setup status beside the step: phase plus the backend's message,
+ * with the live setup log one tap away. Visible while a setup runs and
+ * after it finishes, fails, or is cancelled — a silent step 4 is how the
+ * PermissionError went unnoticed.
+ */
+function HelixSetupStatus({ helix }: Readonly<{ helix: HelixStatus | null }>) {
+  if (!helix) return null;
+  const reportable =
+    helix.setting_up ||
+    helix.phase === "error" ||
+    helix.phase === "cancelled" ||
+    helix.phase === "done";
+  if (!reportable) return null;
+  const phaseLabel: Record<string, string> = {
+    download: "Downloading",
+    build: "Building",
+    done: "Ready",
+    error: "Setup failed",
+    cancelled: "Setup cancelled",
+  };
+  return (
+    <PanelSectionRow>
+      <Field
+        label={`HelixSR status: ${phaseLabel[helix.phase] ?? helix.phase}`}
+        description={helix.message || undefined}
+        bottomSeparator="standard"
+        childrenLayout="inline"
+        childrenContainerWidth="min"
+        focusable
+        onClick={() => showModal(<HelixSetupLogModal />)}
+        onActivate={() => showModal(<HelixSetupLogModal />)}
+      >
+        <Pill>view log</Pill>
+      </Field>
     </PanelSectionRow>
   );
 }
@@ -1136,6 +1176,7 @@ export function SetupChecklist({
                 </ButtonItem>
               </PanelSectionRow>
             ) : null}
+            <HelixSetupStatus helix={helix} />
 
             {!detail.writable ? (
               <PanelSectionRow>
@@ -1276,6 +1317,7 @@ export function SetupChecklist({
         {helixGame ? (
           <HelixVersionRow helix={helix} busy={busy} refresh={refreshHelix} />
         ) : null}
+        {helixGame ? <HelixSetupStatus helix={helix} /> : null}
 
         {/* Only for the games whose entry asks for it. For everything else
             there is no such thing as REFramework being missing, and a row
