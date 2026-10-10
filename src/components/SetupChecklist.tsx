@@ -1,4 +1,5 @@
 import {
+  ButtonItem,
   DialogButton,
   Field,
   Focusable,
@@ -13,6 +14,14 @@ import { FaCheck } from "react-icons/fa";
 import {
   autoInstall,
   getMonitor,
+  helixCancelSetup,
+  helixForgetLaunchOptions,
+  helixGameStatus,
+  helixGetLaunchRecord,
+  helixInstall,
+  helixSetup,
+  helixStatus,
+  helixUninstall,
   install,
   installReframework,
   refreshWiki,
@@ -33,10 +42,17 @@ import {
   resolveChoice,
 } from "../launchOptions";
 import type { LaunchAction, LaunchState } from "../launchOptions";
+import {
+  HELIX_ENV,
+  addHelixEnv,
+  helixLaunchChoices,
+  recordPreviousHelixLaunchOptions,
+} from "../helixLaunch";
 import { PREF_REMOVE_LAUNCH, isRemembering, recallLaunchAction, remember } from "../prefs";
 import type {
   AutoPlan,
   GameDetail,
+  HelixStatus,
   LiveStatus,
   MonitorReport,
   PlannedReframework,
@@ -44,6 +60,7 @@ import type {
 } from "../types";
 import { Mono, Notice, Pill } from "./Common";
 import { RemovePrompt } from "./RemovePrompt";
+import { HelixRemovePrompt } from "./HelixRemovePrompt";
 
 /**
  * Setting a game up, as a checklist rather than a page of panels.
@@ -350,6 +367,8 @@ export function SetupChecklist({
 
   const [withLaunch, setWithLaunch] = useState(true);
   const [withSettings, setWithSettings] = useState(true);
+  const [withHelixSetup, setWithHelixSetup] = useState(true);
+  const [withHelixInstall, setWithHelixInstall] = useState(true);
   const [busy, setBusy] = useState(false);
   /** Steam's current launch options, or null when the client will not say. */
   const [launchNow, setLaunchNow] = useState<string | null>(null);
@@ -369,6 +388,145 @@ export function SetupChecklist({
   useEffect(() => {
     void refreshLaunch();
   }, [refreshLaunch]);
+
+  /** HelixSR: one-time setup state (plugin-wide) and this game's install state. */
+  const [helix, setHelix] = useState<HelixStatus | null>(null);
+  const [helixGame, setHelixGame] = useState<{
+    installed: boolean;
+    ready: boolean;
+    ini_dir: string | null;
+  } | null>(null);
+
+  const refreshHelix = useCallback(async () => {
+    try {
+      const [st, gs] = await Promise.all([helixStatus(), helixGameStatus(detail.target)]);
+      setHelix(st);
+      if (gs.ok) setHelixGame({ installed: gs.installed, ready: gs.ready, ini_dir: gs.ini_dir });
+    } catch {
+      /* backend unreachable; the rows keep their last state */
+    }
+  }, [detail.target]);
+
+  useEffect(() => {
+    void refreshHelix();
+  }, [refreshHelix]);
+
+  useEffect(() => {
+    if (!helix?.setting_up) return;
+    const timer = window.setInterval(() => void refreshHelix(), 2000);
+    return () => window.clearInterval(timer);
+  }, [helix?.setting_up, refreshHelix]);
+
+  /**
+   * Run the one-time HelixSR setup if needed and wait for it to finish.
+   * True when HelixSR is ready afterwards.
+   */
+  const ensureHelixSetup = async (): Promise<boolean> => {
+    const st = await helixStatus().catch(() => null);
+    if (st?.ready) return true;
+    if (!st?.setting_up) {
+      const started = await helixSetup().catch(() => ({ ok: false }));
+      if (!started.ok) {
+        toaster.toast({ title: "HelixSR setup failed to start", body: "Try again." });
+        return false;
+      }
+      toaster.toast({ title: "HelixSR setup started", body: "Downloading and building — this takes a few minutes." });
+    }
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const s = await helixStatus().catch(() => null);
+      if (!s || !s.setting_up) {
+        await refreshHelix();
+        if (s?.ready) return true;
+        toaster.toast({ title: "HelixSR setup failed", body: s?.message || "Try again." });
+        return false;
+      }
+    }
+  };
+
+  /** Install HelixSR for this game: files, ini, and launch options. */
+  const installHelixGame = async (iniDir: string): Promise<boolean> => {
+    const result = await helixInstall(iniDir);
+    if (!result.ok) {
+      toaster.toast({ title: "HelixSR install failed", body: String(result.error ?? "") });
+      return false;
+    }
+    // Record what Steam had before us, then add the HelixSR entries in front
+    // of it — anything already there keeps its place behind them.
+    await recordPreviousHelixLaunchOptions(appid, iniDir);
+    const current = await currentLaunchOptions(appid).catch(() => null);
+    const next = addHelixEnv(current);
+    if (appid && next !== (current ?? "").trim() && !setLaunchOptions(Number(appid), next)) {
+      toaster.toast({
+        title: "HelixSR installed",
+        body: `The launch options could not be written from here — add this yourself: ${HELIX_ENV} %command%`,
+      });
+    }
+    return true;
+  };
+
+  const doHelixRemove = async (iniDir: string, action: LaunchAction) => {
+    setBusy(true);
+    try {
+      const result = await helixUninstall(iniDir);
+      if (!result.ok) {
+        toaster.toast({ title: "Remove failed", body: String(result.error ?? "") });
+        return;
+      }
+      // Apply the launch-options answer, then drop the record: it belonged to
+      // this install.
+      if (action !== "keep" && appid) {
+        const record = await helixGetLaunchRecord(iniDir).catch(() => ({ recorded: false, value: "" }));
+        const current = await currentLaunchOptions(appid).catch(() => null);
+        const choice = helixLaunchChoices({
+          current,
+          recorded: record.recorded ? record.value : null,
+        }).find((c) => c.action === action);
+        if (choice && choice.value !== null) setLaunchOptions(Number(appid), choice.value);
+      }
+      await helixForgetLaunchOptions(iniDir).catch(() => null);
+      toaster.toast({ title: "HelixSR removed", body: String(result.message ?? "") });
+      await refreshHelix();
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const askHelixRemove = async () => {
+    const iniDir = helixGame?.ini_dir;
+    if (!iniDir) return;
+    // Both reads happen before the modal opens: it is a plain render of an
+    // answer already known.
+    const [record, current] = await Promise.all([
+      helixGetLaunchRecord(iniDir).catch(() => ({ recorded: false, value: "" })),
+      appid ? currentLaunchOptions(appid).catch(() => null) : Promise.resolve(null),
+    ]);
+    showModal(
+      <HelixRemovePrompt
+        gameName={detail.name}
+        launch={{ current, recorded: record.recorded ? record.value : null }}
+        onConfirm={(action) => void doHelixRemove(iniDir, action)}
+      />,
+    );
+  };
+
+  const installHelixFromInstalledView = async () => {
+    setBusy(true);
+    try {
+      if (!(await ensureHelixSetup())) return;
+      const gs = await helixGameStatus(detail.target).catch(() => null);
+      if (gs?.ok && gs.ready && gs.ini_dir && !gs.installed) {
+        if (await installHelixGame(gs.ini_dir)) {
+          toaster.toast({ title: "HelixSR installed", body: detail.name });
+        }
+      }
+      await refreshHelix();
+      await refreshLaunch();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!installed) return;
@@ -486,6 +644,22 @@ export function SetupChecklist({
       if (withLaunch && appid && needsOverride) {
         await recordPreviousLaunchOptions(appid, detail.target);
         setLaunchOptions(Number(appid), planned.launch_options);
+      }
+      // Steps 4 and 5: HelixSR. The setup is best-effort inside this run — a
+      // game with OptiScaler but no HelixSR yet is still a working setup.
+      if (withHelixSetup || withHelixInstall) {
+        const setupOk = !withHelixSetup || (await ensureHelixSetup());
+        if (withHelixInstall) {
+          if (!setupOk) {
+            toaster.toast({ title: "HelixSR skipped", body: "The one-time setup did not finish." });
+          } else {
+            const gs = await helixGameStatus(detail.target).catch(() => null);
+            if (gs?.ok && gs.ready && gs.ini_dir && !gs.installed) {
+              await installHelixGame(gs.ini_dir);
+            }
+          }
+        }
+        await refreshHelix();
       }
       toaster.toast({
         title: `${detail.name} is set up`,
@@ -903,6 +1077,52 @@ export function SetupChecklist({
 
             {planned && withSettings ? <HotkeyNote plan={planned} /> : null}
 
+            <PanelSectionRow>
+              <ToggleField
+                label={
+                  <StepLabel n={next()} done={helix?.ready}>
+                    Set up HelixSR <span style={{ opacity: 0.55 }}>(one-time)</span>
+                  </StepLabel>
+                }
+                description={
+                  helix?.ready
+                    ? `HelixSR ${helix.version} is ready — DLSS Model E upscaling through OptiScaler's DLSS backend.`
+                    : helix?.setting_up
+                      ? `Working… ${helix.message || "downloading and building."}`
+                      : "Downloads the pinned HelixSR release, verifies it, and builds the network on this Deck. Once per Deck, not per game."
+                }
+                checked={withHelixSetup}
+                disabled={busy || helix?.ready || helix?.setting_up}
+                bottomSeparator="standard"
+                onChange={setWithHelixSetup}
+              />
+            </PanelSectionRow>
+            {helix?.setting_up ? (
+              <PanelSectionRow>
+                <ButtonItem
+                  layout="below"
+                  disabled={busy}
+                  onClick={() => void helixCancelSetup().then(() => refreshHelix())}
+                >
+                  Cancel HelixSR setup
+                </ButtonItem>
+              </PanelSectionRow>
+            ) : null}
+            <PanelSectionRow>
+              <ToggleField
+                label={
+                  <StepLabel n={next()} done={helixGame?.installed}>
+                    Install HelixSR for this game
+                  </StepLabel>
+                }
+                description="Puts nvngx.dll next to OptiScaler.ini, sets Dx12Upscaler=dlss, and adds the launch options — your previous ones are kept and put back on removal."
+                checked={withHelixInstall}
+                disabled={busy}
+                bottomSeparator="standard"
+                onChange={setWithHelixInstall}
+              />
+            </PanelSectionRow>
+
             {!detail.writable ? (
               <PanelSectionRow>
                 <Notice tone="error" title="Folder is not writable">
@@ -1006,6 +1226,38 @@ export function SetupChecklist({
               </Field>
             </PanelSectionRow>
           )
+        ) : null}
+
+        {helixGame ? (
+          <PanelSectionRow>
+            {helixGame.installed ? (
+              <ToggleField
+                label={<StepLabel done>HelixSR installed</StepLabel>}
+                description="DLSS Model E upscaling through OptiScaler's DLSS backend. Turn off to remove it — the launch options question follows."
+                checked
+                disabled={busy}
+                bottomSeparator="standard"
+                onChange={() => void askHelixRemove()}
+              />
+            ) : (
+              <Field
+                label={<StepLabel>Add HelixSR</StepLabel>}
+                description={
+                  helix?.ready
+                    ? "DLSS Model E upscaling through OptiScaler's DLSS backend."
+                    : "Needs the one-time HelixSR setup first — it starts when you install."
+                }
+                focusable={!busy}
+                bottomSeparator="standard"
+                childrenLayout="inline"
+                childrenContainerWidth="min"
+                onClick={() => void installHelixFromInstalledView()}
+                onActivate={() => void installHelixFromInstalledView()}
+              >
+                <Pill>{helix?.ready ? "install" : "set up & install"}</Pill>
+              </Field>
+            )}
+          </PanelSectionRow>
         ) : null}
 
         {/* Only for the games whose entry asks for it. For everything else

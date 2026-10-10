@@ -11,10 +11,12 @@ import io
 import json
 import os
 import shutil
+import ssl
 import stat
 import subprocess
 import tempfile
 import threading
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -84,20 +86,7 @@ def runtime_dir(state_dir: Path) -> Path:
 
 def download_release(state_dir: Path, cancelled: threading.Event) -> Path:
     """Download and verify the pinned HelixSR release; return its directory."""
-    req = urllib.request.Request(C.RELEASE_URL, headers={"User-Agent": "decky-optiscaler-helix/0.0.1"})
-    chunks, size = [], 0
-    with urllib.request.urlopen(req, timeout=30) as response:
-        while True:
-            if cancelled.is_set():
-                raise HelixError("Setup cancelled")
-            chunk = response.read(256 * 1024)
-            if not chunk:
-                break
-            size += len(chunk)
-            if size > C.MAX_DOWNLOAD_BYTES:
-                raise HelixError("Release exceeds maximum size")
-            chunks.append(chunk)
-    data = b"".join(chunks)
+    data = _fetch(C.RELEASE_URL, cancelled)
     if hashlib.sha256(data).hexdigest() != C.RELEASE_SHA256:
         raise HelixError("Release checksum mismatch; nothing was extracted")
     if cancelled.is_set():
@@ -113,6 +102,90 @@ def download_release(state_dir: Path, cancelled: threading.Event) -> Path:
             shutil.rmtree(runtime)
         shutil.move(str(source), runtime)
     return runtime
+
+
+def _candidate_contexts():
+    """SSL contexts to try, most trustworthy first.
+
+    Mirrors optiscaler.wiki: SteamOS images do not always expose a CA bundle
+    where Python looks for one, and the plugin runs with a trimmed
+    environment, so the default context can fail with
+    CERTIFICATE_VERIFY_FAILED even though the network is fine. The download
+    is SHA-256-pinned afterwards, so even the unverified fallback cannot be
+    fed a tampered release.
+    """
+    try:
+        yield "default", ssl.create_default_context()
+    except Exception:
+        pass
+    try:
+        import certifi
+    except ImportError:
+        pass
+    else:
+        try:
+            yield "certifi", ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            pass
+    for bundle in ("/etc/ssl/certs/ca-certificates.crt",   # SteamOS / Arch
+                   "/etc/pki/tls/certs/ca-bundle.crt",     # Fedora / RHEL
+                   "/etc/ssl/ca-bundle.pem",               # openSUSE
+                   "/etc/ssl/cert.pem"):                   # macOS / BSD
+        if Path(bundle).is_file():
+            try:
+                yield f"system:{bundle}", ssl.create_default_context(cafile=bundle)
+            except Exception:
+                continue
+    try:
+        yield "unverified", ssl._create_unverified_context()
+    except Exception:
+        return
+
+
+def _is_tls_error(exc):
+    """True when a request failed at the TLS layer rather than the network.
+
+    urllib raises URLError with the SSLError as its .reason, so the SSLError
+    never surfaces directly.
+    """
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, ssl.SSLError):
+            return True
+        exc = (getattr(exc, "reason", None)
+               if isinstance(exc, urllib.error.URLError) else None)
+    return False
+
+
+def _fetch(url: str, cancelled: threading.Event) -> bytes:
+    """Fetch url, walking the TLS fallback chain on certificate errors."""
+    req = urllib.request.Request(url, headers={"User-Agent": "decky-optiscaler-helix/0.0.1"})
+    last_exc = None
+    for _kind, context in _candidate_contexts():
+        try:
+            chunks, size = [], 0
+            with urllib.request.urlopen(req, timeout=30, context=context) as response:
+                while True:
+                    if cancelled.is_set():
+                        raise HelixError("Setup cancelled")
+                    chunk = response.read(256 * 1024)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > C.MAX_DOWNLOAD_BYTES:
+                        raise HelixError("Release exceeds maximum size")
+                    chunks.append(chunk)
+            return b"".join(chunks)
+        except Exception as exc:
+            if isinstance(exc, HelixError):
+                raise
+            last_exc = exc
+            if not _is_tls_error(exc):
+                raise
+    raise HelixError(
+        f"Could not download the release ({last_exc}). Check the Deck's network "
+        "connection and date/time, then retry.")
 
 
 def run_setup(runtime: Path, home: Path, cancelled: threading.Event,
@@ -234,12 +307,36 @@ def _helix_dll_path(ini_dir: Path) -> Path:
     return ini_dir / C.HELIX_DIRNAME / C.NVNGX_DLL
 
 
+def _resolve_ini_dir(target_dir: Path) -> Path:
+    """The directory holding OptiScaler.ini for a game target.
+
+    Usually the target dir itself; falls back to a shallow search for games
+    whose ini landed in a subfolder.
+    """
+    target_dir = Path(target_dir)
+    if (target_dir / C.OPTISCALER_INI).is_file():
+        return target_dir
+    found = _find_optiscaler_ini(target_dir, max_depth=3)
+    if found is not None:
+        return found.parent
+    raise HelixError("OptiScaler.ini not found; install OptiScaler first")
+
+
+def game_status(target_dir: Path, state_dir: Path) -> dict:
+    """Whether HelixSR is installed for this game target and setup is ready."""
+    try:
+        ini_dir = _resolve_ini_dir(Path(target_dir))
+    except HelixError:
+        return {"installed": False, "ready": is_ready(state_dir), "ini_dir": None}
+    dll = ini_dir / C.HELIX_DIRNAME / C.NVNGX_DLL
+    return {"installed": dll.is_file(), "ready": is_ready(state_dir),
+            "ini_dir": str(ini_dir)}
+
+
 def install(ini_dir: Path, nvngx_src: Path) -> str:
     """Deploy HelixSR for one game; journal ini changes for uninstall."""
-    ini_dir = Path(ini_dir)
+    ini_dir = _resolve_ini_dir(Path(ini_dir))
     ini_path = ini_dir / C.OPTISCALER_INI
-    if not ini_path.is_file():
-        raise HelixError("OptiScaler.ini not found; install OptiScaler first")
     helix_dir = ini_dir / C.HELIX_DIRNAME
     dll_path = _helix_dll_path(ini_dir)
     if dll_path.is_file():

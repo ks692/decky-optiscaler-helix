@@ -86,6 +86,10 @@ class HelixService:
         games = await self._run(installer.find_games, self.home)
         return {"ok": True, "games": games}
 
+    async def game_status(self, target_dir):
+        return {"ok": True, **await self._run(
+            installer.game_status, Path(target_dir), self.state_dir)}
+
     async def install(self, ini_dir):
         try:
             async with self._lock:

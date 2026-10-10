@@ -217,6 +217,9 @@ class Plugin:
     async def helix_games(self) -> dict:
         return await self.helix.games()
 
+    async def helix_game_status(self, target_dir: str) -> dict:
+        return await self.helix.game_status(target_dir)
+
     async def helix_install(self, ini_dir: str) -> dict:
         return await self.helix.install(ini_dir)
 
