@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import ssl
 import stat
@@ -326,6 +327,33 @@ def installed_version(state_dir: Path) -> str:
         return ""
 
 
+def has_network(dll_path: Path) -> bool:
+    """True when the setup appended the network into the DLL itself.
+
+    Upstream's marker: the footer 'HXSRNET1' in the last 32 bytes. This is
+    the default setup mode (our setup never passes --separate-files); the
+    separate helixsr_weights.bin / helixsr_kernels.pak pair only exists
+    when the setup was run with --separate-files.
+    """
+    try:
+        with dll_path.open("rb") as f:
+            f.seek(-32, os.SEEK_END)
+            return f.read(8) == C.NETWORK_FOOTER
+    except OSError:
+        return False
+
+
+def dll_version(dll_path: Path) -> str:
+    """The HelixSR version embedded in the DLL, e.g. '1.5.1'."""
+    try:
+        with dll_path.open("rb") as f:
+            head = f.read(4 * 1024 * 1024)
+        m = re.search(rb"\x00HelixSR (\d+\.\d+\.\d+)\x00", head)
+        return m.group(1).decode() if m else ""
+    except OSError:
+        return ""
+
+
 def is_ready(state_dir: Path) -> bool:
     runtime = runtime_dir(state_dir)
     marker = runtime / C.READY_MARKER
@@ -334,10 +362,10 @@ def is_ready(state_dir: Path) -> bool:
         return False
     if not installed_version(state_dir):
         return False
-    try:
-        return dll.stat().st_size >= C.MIN_READY_BYTES
-    except OSError:
-        return False
+    if has_network(dll):
+        return True
+    # Setup run with --separate-files: the network lives beside the DLL.
+    return all((runtime / name).is_file() for name in C.NETWORK_FILES)
 
 
 def setup_log_tail(state_dir: Path, lines: int = 120) -> str:
@@ -418,10 +446,19 @@ def game_status(target_dir: Path, state_dir: Path) -> dict:
     try:
         ini_dir = _resolve_ini_dir(Path(target_dir))
     except HelixError:
-        return {"installed": False, "ready": is_ready(state_dir), "ini_dir": None}
+        return {"installed": False, "ready": is_ready(state_dir),
+                "ini_dir": None, "helixsr_version": ""}
     dll = ini_dir / C.HELIX_DIRNAME / C.NVNGX_DLL
+    version = ""
+    journal = _journal_path(ini_dir)
+    if journal.is_file():
+        try:
+            version = str(json.loads(journal.read_text())
+                          .get("helixsr_version") or "")
+        except (OSError, ValueError):
+            pass
     return {"installed": dll.is_file(), "ready": is_ready(state_dir),
-            "ini_dir": str(ini_dir)}
+            "ini_dir": str(ini_dir), "helixsr_version": version}
 
 
 def install(ini_dir: Path, nvngx_src: Path) -> str:
@@ -447,11 +484,19 @@ def install(ini_dir: Path, nvngx_src: Path) -> str:
         C.INI_LIB_KEY: ini.get(C.INI_LIB_SECTION, C.INI_LIB_KEY),
     }
     _atomic_write(_journal_path(ini_dir),
-                  json.dumps({"ini": str(ini_path), "previous": previous},
+                  json.dumps({"ini": str(ini_path),
+                              "helixsr_version": dll_version(nvngx_src),
+                              "previous": previous},
                              indent=2).encode())
 
     helix_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(nvngx_src, dll_path)
+    if not has_network(nvngx_src):
+        # Setup run with --separate-files: the network lives beside the DLL.
+        for name in C.NETWORK_FILES:
+            sidecar = Path(nvngx_src).parent / name
+            if sidecar.is_file():
+                shutil.copy2(sidecar, helix_dir / name)
 
     ini.set(C.INI_DX12_SECTION, C.INI_DX12_KEY, C.INI_DX12_VALUE)
     ini.set(C.INI_LIB_SECTION, C.INI_LIB_KEY, windows_path(dll_path))

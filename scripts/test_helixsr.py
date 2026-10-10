@@ -54,11 +54,24 @@ def build_fixture(root):
     return home, bindir
 
 
-def fake_ready(state_dir):
+def fake_ready(state_dir, with_network=True):
     runtime = installer.runtime_dir(state_dir)
     runtime.mkdir(parents=True, exist_ok=True)
-    (runtime / C.NVNGX_DLL).write_bytes(b"0" * (C.MIN_READY_BYTES + 1))
+    dll = runtime / C.NVNGX_DLL
+    if with_network:
+        dll.write_bytes(b"\x00HelixSR 1.5.1\x00" + b"0" * 100 + b"\x00" * 24 + C.NETWORK_FOOTER + b"\x00" * 24)
+    else:
+        dll.write_bytes(b"0" * 1024)
+        for name in C.NETWORK_FILES:
+            (runtime / name).write_bytes(b"1" * 64)
     (runtime / C.READY_MARKER).write_text(json.dumps({"version": C.VERSION}))
+
+
+def dll_bytes(version="1.5.1", with_network=True):
+    head = b"\x00HelixSR " + version.encode() + b"\x00"
+    if with_network:
+        return head + b"0" * 100 + b"\x00" * 24 + C.NETWORK_FOOTER + b"\x00" * 24
+    return head + b"0" * 100
 
 
 async def main():
@@ -107,6 +120,10 @@ async def main():
         check("ready after marker written", (await service.status())["ready"])
         check("installed version reported",
               (await service.status())["version"] == C.VERSION)
+        check("network footer detected",
+              installer.has_network(installer.runtime_dir(state) / C.NVNGX_DLL))
+        check("dll version parsed",
+              installer.dll_version(installer.runtime_dir(state) / C.NVNGX_DLL) == "1.5.1")
         installed = await service.install(str(bindir))
         check("install succeeds", installed["ok"], installed)
         ini_text = (bindir / "OptiScaler.ini").read_text()
@@ -125,6 +142,11 @@ async def main():
         journal = json.loads((bindir / "HelixSR" / C.JOURNAL_NAME).read_text())
         check("journal still holds the true originals",
               journal["previous"].get(C.INI_DX12_KEY) == "auto")
+        check("journal records the dll version",
+              journal.get("helixsr_version") == "1.5.1", journal)
+        gs = await service.game_status(str(bindir))
+        check("game status reports the installed version",
+              gs["ok"] and gs["helixsr_version"] == "1.5.1", gs)
 
         # uninstall restores
         removed = await service.uninstall(str(bindir))
@@ -133,6 +155,22 @@ async def main():
         check("Dx12Upscaler restored", "Dx12Upscaler=auto" in restored)
         check("NvngxPath restored", "NvngxPath=auto" in restored)
         check("HelixSR folder gone", not (bindir / "HelixSR").exists())
+
+        # separate-files setup mode: dll without the network, sidecars beside it
+        state2 = root / "state2"
+        fake_ready(state2, with_network=False)
+        check("ready via separate network files",
+              installer.is_ready(state2))
+        check("dll without footer is not network-carrying",
+              not installer.has_network(installer.runtime_dir(state2) / C.NVNGX_DLL))
+        service2 = HelixService(home=home, state_dir=state2, logger=logger)
+        installed2 = await service2.install(str(bindir))
+        check("install succeeds in separate-files mode", installed2["ok"])
+        check("sidecars deployed next to the dll",
+              all((bindir / "HelixSR" / n).is_file() for n in C.NETWORK_FILES))
+        await service2.uninstall(str(bindir))
+        check("sidecars removed with uninstall",
+              not (bindir / "HelixSR").exists())
 
         # launch-option record
         rec0 = await service.get_launch_record(str(bindir))

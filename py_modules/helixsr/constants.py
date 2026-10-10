@@ -16,6 +16,10 @@ KNOWN_SHAS = {
 }
 
 NVNGX_DLL = "nvngx.dll"
+# Network files when the setup runs with --separate-files; by default the
+# setup appends the network into nvngx.dll itself (footer "HXSRNET1").
+NETWORK_FILES = ("helixsr_weights.bin", "helixsr_kernels.pak")
+NETWORK_FOOTER = b"HXSRNET1"
 SETUP_SCRIPT = "helixsr-setup.sh"
 OPTISCALER_INI = "OptiScaler.ini"
 HELIX_DIRNAME = "HelixSR"
@@ -31,5 +35,3 @@ INI_LIB_SECTION = "Libraries"
 INI_LIB_KEY = "NvngxPath"
 
 MAX_DOWNLOAD_BYTES = 32 * 1024 * 1024
-# nvngx.dll from the release is ~1 MB; the setup appends the network.
-MIN_READY_BYTES = 2 * 1024 * 1024
