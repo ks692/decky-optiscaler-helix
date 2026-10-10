@@ -715,20 +715,26 @@ export function SetupChecklist({
       // single step. Best-effort: a HelixSR failure never breaks the
       // OptiScaler half, and reinstalls are clean (the ini journal always
       // keeps the true originals).
+      let helixSkipped = false;
       if (withHelix) {
         if (await ensureHelixSetup()) {
           const gs = await helixGameStatus(detail.target).catch(() => null);
           if (gs?.ok && gs.ready && gs.ini_dir) {
-            await installHelixGame(gs.ini_dir);
+            helixSkipped = !(await installHelixGame(gs.ini_dir));
+          } else {
+            helixSkipped = true;
           }
         } else {
+          helixSkipped = true;
           toaster.toast({ title: "HelixSR skipped", body: "The one-time setup did not finish." });
         }
         await refreshHelix();
       }
       toaster.toast({
         title: `${detail.name} is set up`,
-        body: `Installed as ${planned.filename}.`,
+        body: helixSkipped
+          ? "OptiScaler is in; HelixSR was skipped."
+          : `Installed as ${planned.filename}.`,
       });
       await onChanged();
       await onReloadPlan();
@@ -983,7 +989,8 @@ export function SetupChecklist({
     const refStep = ref && ref.automatic ? 1 : 0;
     const steps = refStep + 1 +
       (planned && needsOverride && appid && withLaunch ? 1 : 0) +
-      (planned && withSettings ? 1 : 0);
+      (planned && withSettings ? 1 : 0) +
+      (withHelix ? 1 : 0);
     /** Step numbers, so inserting one above does not renumber by hand. */
     let step = 0;
     const next = () => (step += 1);
@@ -1169,7 +1176,9 @@ export function SetupChecklist({
               <PanelSectionRow>
                 <ButtonItem
                   layout="below"
-                  disabled={busy}
+                  // Not gated on busy: the run holds busy for the whole setup
+                  // wait, and a cancel button that is greyed out exactly while
+                  // the setup runs is no cancel button at all.
                   onClick={() => void helixCancelSetup().then(() => refreshHelix())}
                 >
                   Cancel HelixSR setup
