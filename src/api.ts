@@ -7,7 +7,6 @@ import type {
   GpuInfo,
   Game,
   GameDetail,
-  HelixCommands,
   HelixGame,
   HelixStatus,
   Library,
@@ -195,4 +194,14 @@ export const helixSetupLog = callable<[], { ok: boolean; log: string }>("helix_s
 export const helixGames = callable<[], { ok: boolean; games: HelixGame[] }>("helix_games");
 export const helixInstall = callable<[iniDir: string], ActionResult>("helix_install");
 export const helixUninstall = callable<[iniDir: string], ActionResult>("helix_uninstall");
-export const helixCommands = callable<[], HelixCommands>("helix_commands");
+export const helixRecordLaunchOptions = callable<
+  [iniDir: string, options?: string | null, appid?: string],
+  ActionResult
+>("helix_record_launch_options");
+export const helixGetLaunchRecord = callable<
+  [iniDir: string],
+  { ok: boolean; recorded: boolean; value: string }
+>("helix_get_launch_record");
+export const helixForgetLaunchOptions = callable<[iniDir: string], ActionResult>(
+  "helix_forget_launch_options"
+);

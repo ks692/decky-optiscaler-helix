@@ -13,6 +13,7 @@ OPTISCALER_INI = "OptiScaler.ini"
 HELIX_DIRNAME = "HelixSR"
 JOURNAL_NAME = "helixsr-install.json"
 READY_MARKER = "helixsr-ready.json"
+LAUNCH_RECORD_NAME = "helixsr_previous_launch_options.txt"
 
 # ini keys managed per game, as upstream's helixsr-install.sh does.
 INI_DX12_SECTION = "Upscalers"
@@ -20,14 +21,6 @@ INI_DX12_KEY = "Dx12Upscaler"
 INI_DX12_VALUE = "dlss"
 INI_LIB_SECTION = "Libraries"
 INI_LIB_KEY = "NvngxPath"
-
-# Copy-paste launch commands shown in the UI. The lsfg-vk variant leaves room
-# for the user's own lsfg options; only one frame-generation source may be
-# active at a time (HelixSR provides upscaling only).
-LAUNCH_OPTION = "PROTON_FORCE_NVAPI=1 DXVK_NVAPI_GPU_ARCH=AD100 %command%"
-LAUNCH_OPTION_LSFG = (
-    "PROTON_FORCE_NVAPI=1 DXVK_NVAPI_GPU_ARCH=AD100 <lsfg-vk options> %command%"
-)
 
 MAX_DOWNLOAD_BYTES = 32 * 1024 * 1024
 # nvngx.dll from the release is ~1 MB; the setup appends the network.

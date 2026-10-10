@@ -223,5 +223,12 @@ class Plugin:
     async def helix_uninstall(self, ini_dir: str) -> dict:
         return await self.helix.uninstall(ini_dir)
 
-    async def helix_commands(self) -> dict:
-        return await self.helix.commands()
+    async def helix_record_launch_options(self, ini_dir: str, options: str = None,
+                                          appid: str = None) -> dict:
+        return await self.helix.record_launch_options(ini_dir, options, appid)
+
+    async def helix_get_launch_record(self, ini_dir: str) -> dict:
+        return await self.helix.get_launch_record(ini_dir)
+
+    async def helix_forget_launch_options(self, ini_dir: str) -> dict:
+        return await self.helix.forget_launch_options(ini_dir)

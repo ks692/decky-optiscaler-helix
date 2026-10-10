@@ -7,6 +7,7 @@ from pathlib import Path
 
 from . import constants as C
 from . import installer
+from optiscaler import steam as steam_mod
 
 
 class HelixService:
@@ -109,18 +110,37 @@ class HelixService:
                 self.log.exception("HelixSR uninstall failed for %s", ini_dir)
             return {"ok": False, "error": str(exc)}
 
-    # -- commands ----------------------------------------------------------
+    # -- launch options ----------------------------------------------------
 
-    async def commands(self):
-        return {
-            "ok": True,
-            "launch_option": C.LAUNCH_OPTION,
-            "launch_option_lsfg": C.LAUNCH_OPTION_LSFG,
-            "notes": [
-                "Paste into the game's Steam launch options.",
-                "The lsfg-vk variant is for the HelixSR + lsfg-vk combo: "
-                "HelixSR handles upscaling, lsfg-vk handles frame generation. "
-                "Do not stack two frame generators (e.g. OptiScaler FG plus "
-                "lsfg-vk) — pick one.",
-            ],
-        }
+    async def record_launch_options(self, ini_dir, options=None, appid=None):
+        """Keep this game's launch options as they were before HelixSR.
+
+        Mirrors optiscaler.service: the frontend's client read is freshest,
+        Steam's config file is the fallback, and the record is write-once.
+        """
+        try:
+            if options is None and appid is not None:
+                found = await self._run(steam_mod.launch_options, self.home, appid)
+                if not found["found"]:
+                    return {"ok": False, "recorded": False, "value": "",
+                            "written": False,
+                            "error": "Steam would not report the launch options"}
+                options = found["value"]
+            if options is None:
+                return {"ok": False, "recorded": False, "value": "",
+                        "written": False, "error": "no launch options to record"}
+            result = await self._run(
+                installer.record_launch_options, Path(ini_dir), options)
+            return {"ok": True, **result}
+        except Exception as exc:
+            if self.log:
+                self.log.exception("could not record launch options for %s", ini_dir)
+            return {"ok": False, "error": str(exc)}
+
+    async def get_launch_record(self, ini_dir):
+        return {"ok": True,
+                **await self._run(installer.read_launch_record, Path(ini_dir))}
+
+    async def forget_launch_options(self, ini_dir):
+        forgotten = await self._run(installer.forget_launch_options, Path(ini_dir))
+        return {"ok": True, "forgotten": forgotten}

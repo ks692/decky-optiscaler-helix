@@ -111,11 +111,23 @@ async def main():
         check("NvngxPath restored", "NvngxPath=auto" in restored)
         check("HelixSR folder gone", not (bindir / "HelixSR").exists())
 
-        # commands
-        commands = await service.commands()
-        check("launch option present",
-              commands["ok"] and "%command%" in commands["launch_option"])
-        check("lsfg variant present", "%command%" in commands["launch_option_lsfg"])
+        # launch-option record
+        rec0 = await service.get_launch_record(str(bindir))
+        check("no launch record initially",
+              rec0["ok"] and not rec0["recorded"])
+        r1 = await service.record_launch_options(
+            str(bindir), "MANGOHUD=1 %command%", appid="1091500")
+        check("record writes once", r1["ok"] and r1["written"])
+        r2 = await service.record_launch_options(str(bindir), "OTHER=1 %command%")
+        check("second record does not overwrite",
+              r2["ok"] and not r2["written"] and r2["value"] == "MANGOHUD=1 %command%")
+        rec1 = await service.get_launch_record(str(bindir))
+        check("record reads back",
+              rec1["recorded"] and rec1["value"] == "MANGOHUD=1 %command%")
+        forgotten = await service.forget_launch_options(str(bindir))
+        check("forget drops the record", forgotten["ok"] and forgotten["forgotten"])
+        rec2 = await service.get_launch_record(str(bindir))
+        check("record gone after forget", not rec2["recorded"])
 
     print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
     if FAILED:

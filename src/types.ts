@@ -535,10 +535,3 @@ export interface HelixGame {
   ini: string;
   helix_installed: boolean;
 }
-
-export interface HelixCommands {
-  ok: boolean;
-  launch_option: string;
-  launch_option_lsfg: string;
-  notes: string[];
-}

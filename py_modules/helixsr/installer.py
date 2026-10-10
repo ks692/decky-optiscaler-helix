@@ -287,3 +287,40 @@ def uninstall(ini_dir: Path) -> str:
         ini.save()
     shutil.rmtree(ini_dir / C.HELIX_DIRNAME, ignore_errors=True)
     return "HelixSR removed; OptiScaler.ini restored."
+
+
+# -- launch-option record --------------------------------------------------
+#
+# Kept in its own file (not OptiScaler's record): both mods can be installed
+# for the same game, and "what was there before HelixSR" is a different
+# answer from "what was there before OptiScaler". Write-once, like theirs.
+
+def _launch_record_path(ini_dir: Path) -> Path:
+    return Path(ini_dir) / C.HELIX_DIRNAME / C.LAUNCH_RECORD_NAME
+
+
+def read_launch_record(ini_dir: Path) -> dict:
+    path = _launch_record_path(ini_dir)
+    if not path.is_file():
+        return {"recorded": False, "value": ""}
+    try:
+        return {"recorded": True, "value": path.read_text(encoding="utf-8")}
+    except OSError:
+        return {"recorded": False, "value": ""}
+
+
+def record_launch_options(ini_dir: Path, options: str) -> dict:
+    path = _launch_record_path(ini_dir)
+    if path.exists():
+        return {"recorded": True, "value": read_launch_record(ini_dir)["value"],
+                "written": False}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(options or "", encoding="utf-8")
+    return {"recorded": True, "value": options or "", "written": True}
+
+
+def forget_launch_options(ini_dir: Path) -> bool:
+    path = _launch_record_path(ini_dir)
+    existed = path.is_file()
+    path.unlink(missing_ok=True)
+    return existed
