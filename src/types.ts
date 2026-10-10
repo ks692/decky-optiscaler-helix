@@ -522,6 +522,7 @@ export interface LiveApplyResult {
 
 export interface HelixStatus {
   version: string;
+  use_latest: boolean;
   ready: boolean;
   setting_up: boolean;
   phase: string;

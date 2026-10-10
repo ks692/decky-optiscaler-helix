@@ -191,6 +191,10 @@ export const helixStatus = callable<[], HelixStatus>("helix_status");
 export const helixSetup = callable<[], ActionResult>("helix_setup");
 export const helixCancelSetup = callable<[], ActionResult>("helix_cancel_setup");
 export const helixSetupLog = callable<[], { ok: boolean; log: string }>("helix_setup_log");
+export const helixSetUseLatest = callable<
+  [value: boolean],
+  { ok: boolean; use_latest: boolean }
+>("helix_set_use_latest");
 export const helixGames = callable<[], { ok: boolean; games: HelixGame[] }>("helix_games");
 export const helixGameStatus = callable<
   [targetDir: string],

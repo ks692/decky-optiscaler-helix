@@ -6,6 +6,14 @@ RELEASE_URL = (
 )
 RELEASE_SHA256 = "45401aae70bdc7a734ab9f143772abf9c966a20df3fe0b9dfaee487d72408708"
 ARCHIVE_ROOT = "HelixSR-1.5.1"
+GITHUB_REPO = "lonewolf0622/HelixSR"
+
+# SHA-256 for releases verified out-of-band. "Latest" downloads are checksum
+# verified only when their version is listed here; unknown versions proceed
+# unverified, with the warning logged, because the user asked for latest.
+KNOWN_SHAS = {
+    "1.5.1": RELEASE_SHA256,
+}
 
 NVNGX_DLL = "nvngx.dll"
 SETUP_SCRIPT = "helixsr-setup.sh"

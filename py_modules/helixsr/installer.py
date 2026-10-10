@@ -80,23 +80,93 @@ def windows_path(linux_path: Path) -> str:
 
 # -- setup -----------------------------------------------------------------
 
+def _settings_path(state_dir: Path) -> Path:
+    return Path(state_dir) / "helixsr-settings.json"
+
+
+def get_use_latest(state_dir: Path) -> bool:
+    """Whether setup should resolve the latest upstream release."""
+    try:
+        return bool(json.loads(_settings_path(state_dir).read_text())
+                    .get("use_latest"))
+    except (OSError, ValueError):
+        return False
+
+
+def set_use_latest(state_dir: Path, value: bool) -> bool:
+    """Persist the latest-vs-pinned choice; applies to the next setup run."""
+    _atomic_write(_settings_path(state_dir),
+                  json.dumps({"use_latest": bool(value)}, indent=2).encode())
+    return bool(value)
+
+
 def runtime_dir(state_dir: Path) -> Path:
-    return Path(state_dir) / "runtime" / C.ARCHIVE_ROOT
+    # Version-agnostic: the ready marker records which release was installed.
+    return Path(state_dir) / "runtime" / "helixsr"
 
 
-def download_release(state_dir: Path, cancelled: threading.Event) -> Path:
-    """Download and verify the pinned HelixSR release; return its directory."""
-    data = _fetch(C.RELEASE_URL, cancelled)
-    if hashlib.sha256(data).hexdigest() != C.RELEASE_SHA256:
-        raise HelixError("Release checksum mismatch; nothing was extracted")
+def resolve_release(state_dir: Path,
+                    cancelled: threading.Event) -> dict:
+    """Which HelixSR release setup should download.
+
+    Pinned 1.5.1 by default; with use_latest, the newest GitHub release.
+    """
+    if not get_use_latest(state_dir):
+        return {"version": C.VERSION, "url": C.RELEASE_URL,
+                "sha256": C.RELEASE_SHA256, "archive_root": C.ARCHIVE_ROOT,
+                "verified": True}
+    api = f"https://api.github.com/repos/{C.GITHUB_REPO}/releases/latest"
+    try:
+        payload = json.loads(_fetch(api, cancelled).decode("utf-8"))
+    except HelixError:
+        raise
+    except Exception as exc:
+        raise HelixError(f"Could not resolve the latest HelixSR release: {exc}")
+    tag = str(payload.get("tag_name") or "")
+    version = tag[1:] if tag.startswith("v") else tag
+    url = None
+    for asset in payload.get("assets") or []:
+        name = str(asset.get("name") or "")
+        if name.lower().endswith(".zip") and "helixsr" in name.lower():
+            url = asset.get("browser_download_url")
+            break
+    if not url:
+        raise HelixError(f"Latest HelixSR release {tag or '?'} has no usable zip asset")
+    sha256 = C.KNOWN_SHAS.get(version)
+    return {"version": version or tag, "url": url, "sha256": sha256,
+            "archive_root": None, "verified": sha256 is not None}
+
+
+def _find_setup_root(temp: Path) -> Path:
+    """Locate the extracted directory holding helixsr-setup.sh."""
+    if (temp / C.SETUP_SCRIPT).is_file():
+        return temp
+    for child in sorted(temp.iterdir()):
+        if child.is_dir() and (child / C.SETUP_SCRIPT).is_file():
+            return child
+    raise HelixError("Unexpected release layout")
+
+
+def download_release(state_dir: Path,
+                     cancelled: threading.Event) -> tuple[Path, str]:
+    """Download and verify the chosen HelixSR release; return (dir, version)."""
+    rel = resolve_release(state_dir, cancelled)
+    data = _fetch(rel["url"], cancelled)
+    if rel["sha256"]:
+        if hashlib.sha256(data).hexdigest() != rel["sha256"]:
+            raise HelixError("Release checksum mismatch; nothing was extracted")
+    # else: unknown "latest" version — proceeds unverified, logged below.
     if cancelled.is_set():
         raise HelixError("Setup cancelled")
     runtime = runtime_dir(state_dir)
     with tempfile.TemporaryDirectory(prefix="helix-download-", dir=state_dir) as temp:
         _safe_extract(data, Path(temp))
-        source = Path(temp) / C.ARCHIVE_ROOT
-        if not (source / C.SETUP_SCRIPT).is_file():
-            raise HelixError("Unexpected release layout")
+        if rel["archive_root"]:
+            source = Path(temp) / rel["archive_root"]
+            if not (source / C.SETUP_SCRIPT).is_file():
+                raise HelixError("Unexpected release layout")
+        else:
+            source = _find_setup_root(Path(temp))
         # Upstream's zip carries the exec bit on launch_synth, but extraction
         # does not always preserve it (seen on Deck: PermissionError). The
         # setup executes these directly, so make it explicit.
@@ -108,7 +178,7 @@ def download_release(state_dir: Path, cancelled: threading.Event) -> Path:
         if runtime.exists():
             shutil.rmtree(runtime)
         shutil.move(str(source), runtime)
-    return runtime
+    return runtime, rel["version"], rel["verified"]
 
 
 def _candidate_contexts():
@@ -196,7 +266,8 @@ def _fetch(url: str, cancelled: threading.Event) -> bytes:
 
 
 def run_setup(runtime: Path, home: Path, cancelled: threading.Event,
-              log_path: Path, logger=None) -> None:
+              log_path: Path, version: str, verified: bool = True,
+              logger=None) -> None:
     """Run the upstream setup script; raises HelixError on failure/cancel."""
     script = runtime / C.SETUP_SCRIPT
     if not script.is_file():
@@ -209,6 +280,14 @@ def run_setup(runtime: Path, home: Path, cancelled: threading.Event,
     env.pop("LD_LIBRARY_PATH", None)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("wb") as log:
+        banner = [f"HelixSR setup: version {version}"]
+        if not verified:
+            banner.append(
+                "WARNING: this release is not in the plugin's known-checksum "
+                "list; the download was NOT checksum-verified. "
+                "Proceed at your own risk.")
+        log.write(("\n".join(banner) + "\n").encode())
+        log.flush()
         proc = subprocess.Popen(
             ["bash", str(script), "--yes"],
             cwd=runtime, env=env,
@@ -236,7 +315,15 @@ def run_setup(runtime: Path, home: Path, cancelled: threading.Event,
         raise HelixError(
             f"Setup exited with code {proc.returncode}. See the setup log, then retry.")
     marker = runtime / C.READY_MARKER
-    _atomic_write(marker, json.dumps({"version": C.VERSION}).encode())
+    _atomic_write(marker, json.dumps({"version": version}).encode())
+
+
+def installed_version(state_dir: Path) -> str:
+    marker = runtime_dir(state_dir) / C.READY_MARKER
+    try:
+        return str(json.loads(marker.read_text()).get("version") or "")
+    except (OSError, ValueError):
+        return ""
 
 
 def is_ready(state_dir: Path) -> bool:
@@ -245,10 +332,7 @@ def is_ready(state_dir: Path) -> bool:
     dll = runtime / C.NVNGX_DLL
     if not marker.is_file() or not dll.is_file():
         return False
-    try:
-        if json.loads(marker.read_text()).get("version") != C.VERSION:
-            return False
-    except (OSError, ValueError):
+    if not installed_version(state_dir):
         return False
     try:
         return dll.stat().st_size >= C.MIN_READY_BYTES

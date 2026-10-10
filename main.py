@@ -214,6 +214,9 @@ class Plugin:
     async def helix_setup_log(self) -> dict:
         return await self.helix.setup_log()
 
+    async def helix_set_use_latest(self, value: bool) -> dict:
+        return await self.helix.set_use_latest(value)
+
     async def helix_games(self) -> dict:
         return await self.helix.games()
 

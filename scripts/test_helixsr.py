@@ -11,6 +11,7 @@ import logging
 import os
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -80,6 +81,21 @@ async def main():
         status = await service.status()
         check("status reports not ready before setup",
               status["version"] == C.VERSION and not status["ready"])
+        check("pinned by default", status["use_latest"] is False)
+
+        # version choice round-trips and resolves to the pinned release
+        set_res = await service.set_use_latest(False)
+        check("set_use_latest(false) sticks",
+              set_res["ok"] and set_res["use_latest"] is False)
+        rel = installer.resolve_release(state, threading.Event())
+        check("pinned resolution is verified",
+              rel["version"] == C.VERSION and rel["verified"]
+              and rel["sha256"] == C.RELEASE_SHA256)
+        check("set_use_latest(true) sticks",
+              (await service.set_use_latest(True))["use_latest"] is True)
+        check("status reflects the choice",
+              (await service.status())["use_latest"] is True)
+        await service.set_use_latest(False)
 
         # install refused before setup
         denied = await service.install(str(bindir))
@@ -89,6 +105,8 @@ async def main():
         # fake a completed setup, then install
         fake_ready(state)
         check("ready after marker written", (await service.status())["ready"])
+        check("installed version reported",
+              (await service.status())["version"] == C.VERSION)
         installed = await service.install(str(bindir))
         check("install succeeds", installed["ok"], installed)
         ini_text = (bindir / "OptiScaler.ini").read_text()

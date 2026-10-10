@@ -19,6 +19,7 @@ import {
   helixGameStatus,
   helixGetLaunchRecord,
   helixInstall,
+  helixSetUseLatest,
   helixSetup,
   helixStatus,
   helixUninstall,
@@ -140,6 +141,32 @@ function StepLabel({ n, done, children }: Readonly<{
 function shorten(path: string, keep = 3) {
   const parts = path.split("/").filter(Boolean);
   return parts.length <= keep ? path : `…/${parts.slice(-keep).join("/")}`;
+}
+
+/** Pinned-vs-latest choice for the next HelixSR setup run. */
+function HelixVersionRow({ helix, busy, refresh }: Readonly<{
+  helix: HelixStatus | null;
+  busy: boolean;
+  refresh: () => Promise<void>;
+}>) {
+  return (
+    <PanelSectionRow>
+      <ToggleField
+        label="Use the latest HelixSR release"
+        description={
+          helix?.use_latest
+            ? "The next setup downloads the newest upstream release. The checksum is verified only for known releases — an unknown one proceeds unverified, and the setup log says so."
+            : `Pinned to HelixSR ${helix?.version ?? "1.5.1"} with a verified checksum. Applies to the next setup run.`
+        }
+        checked={!!helix?.use_latest}
+        disabled={busy || !!helix?.setting_up}
+        bottomSeparator="standard"
+        onChange={(v: boolean) => {
+          void helixSetUseLatest(v).then(() => refresh());
+        }}
+      />
+    </PanelSectionRow>
+  );
 }
 
 /**
@@ -1097,6 +1124,7 @@ export function SetupChecklist({
                 onChange={setWithHelix}
               />
             </PanelSectionRow>
+            <HelixVersionRow helix={helix} busy={busy} refresh={refreshHelix} />
             {helix?.setting_up ? (
               <PanelSectionRow>
                 <ButtonItem
@@ -1244,6 +1272,9 @@ export function SetupChecklist({
               </Field>
             )}
           </PanelSectionRow>
+        ) : null}
+        {helixGame ? (
+          <HelixVersionRow helix={helix} busy={busy} refresh={refreshHelix} />
         ) : null}
 
         {/* Only for the games whose entry asks for it. For everything else

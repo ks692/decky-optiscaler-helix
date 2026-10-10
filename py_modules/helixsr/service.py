@@ -29,13 +29,20 @@ class HelixService:
     async def status(self):
         ready = await self._run(installer.is_ready, self.state_dir)
         setting_up = self._setup_task is not None and not self._setup_task.done()
+        version = await self._run(installer.installed_version, self.state_dir)
         return {
-            "version": C.VERSION,
+            "version": version or C.VERSION,
+            "use_latest": await self._run(installer.get_use_latest, self.state_dir),
             "ready": ready,
             "setting_up": setting_up,
             "phase": self._setup_state["phase"],
             "message": self._setup_state["message"],
         }
+
+    async def set_use_latest(self, value):
+        use_latest = await self._run(
+            installer.set_use_latest, self.state_dir, bool(value))
+        return {"ok": True, "use_latest": use_latest}
 
     # -- setup -------------------------------------------------------------
 
@@ -47,11 +54,16 @@ class HelixService:
     def _setup_job(self, cancel_event):
         self._set_phase("download", "Downloading HelixSR")
         try:
-            runtime = installer.download_release(self.state_dir, cancel_event)
-            self._set_phase("build", "Building the HelixSR network")
+            runtime, version, verified = installer.download_release(
+                self.state_dir, cancel_event)
+            use_latest = installer.get_use_latest(self.state_dir)
+            self._set_phase("build",
+                            f"Building the HelixSR network ({version}"
+                            f"{'' if use_latest else ', pinned'})")
             installer.run_setup(runtime, self.home, cancel_event,
-                                self.state_dir / "helixsr-setup.log", self.log)
-            self._set_phase("done", "HelixSR ready")
+                                self.state_dir / "helixsr-setup.log",
+                                version, verified, self.log)
+            self._set_phase("done", f"HelixSR {version} ready")
         except Exception as exc:  # surfaced verbatim in the UI
             if str(exc) == "Setup cancelled":
                 self._set_phase("cancelled", "Setup cancelled")
