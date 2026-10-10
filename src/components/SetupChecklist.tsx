@@ -367,8 +367,7 @@ export function SetupChecklist({
 
   const [withLaunch, setWithLaunch] = useState(true);
   const [withSettings, setWithSettings] = useState(true);
-  const [withHelixSetup, setWithHelixSetup] = useState(true);
-  const [withHelixInstall, setWithHelixInstall] = useState(true);
+  const [withHelix, setWithHelix] = useState(true);
   const [busy, setBusy] = useState(false);
   /** Steam's current launch options, or null when the client will not say. */
   const [launchNow, setLaunchNow] = useState<string | null>(null);
@@ -645,19 +644,18 @@ export function SetupChecklist({
         await recordPreviousLaunchOptions(appid, detail.target);
         setLaunchOptions(Number(appid), planned.launch_options);
       }
-      // Steps 4 and 5: HelixSR. The setup is best-effort inside this run — a
-      // game with OptiScaler but no HelixSR yet is still a working setup.
-      if (withHelixSetup || withHelixInstall) {
-        const setupOk = !withHelixSetup || (await ensureHelixSetup());
-        if (withHelixInstall) {
-          if (!setupOk) {
-            toaster.toast({ title: "HelixSR skipped", body: "The one-time setup did not finish." });
-          } else {
-            const gs = await helixGameStatus(detail.target).catch(() => null);
-            if (gs?.ok && gs.ready && gs.ini_dir && !gs.installed) {
-              await installHelixGame(gs.ini_dir);
-            }
+      // Step 4: HelixSR — one-time setup plus this game's install, as a
+      // single step. Best-effort: a HelixSR failure never breaks the
+      // OptiScaler half, and reinstalls are clean (the ini journal always
+      // keeps the true originals).
+      if (withHelix) {
+        if (await ensureHelixSetup()) {
+          const gs = await helixGameStatus(detail.target).catch(() => null);
+          if (gs?.ok && gs.ready && gs.ini_dir) {
+            await installHelixGame(gs.ini_dir);
           }
+        } else {
+          toaster.toast({ title: "HelixSR skipped", body: "The one-time setup did not finish." });
         }
         await refreshHelix();
       }
@@ -1080,21 +1078,23 @@ export function SetupChecklist({
             <PanelSectionRow>
               <ToggleField
                 label={
-                  <StepLabel n={next()} done={helix?.ready}>
-                    Set up HelixSR <span style={{ opacity: 0.55 }}>(one-time)</span>
+                  <StepLabel n={next()} done={helixGame?.installed}>
+                    Set up HelixSR and install it for this game
                   </StepLabel>
                 }
                 description={
-                  helix?.ready
-                    ? `HelixSR ${helix.version} is ready — DLSS Model E upscaling through OptiScaler's DLSS backend.`
-                    : helix?.setting_up
-                      ? `Working… ${helix.message || "downloading and building."}`
-                      : "Downloads the pinned HelixSR release, verifies it, and builds the network on this Deck. Once per Deck, not per game."
+                  helixGame?.installed
+                    ? "HelixSR is installed for this game — running again reinstalls it cleanly."
+                    : helix?.ready
+                      ? "Installs HelixSR for this game: nvngx.dll next to OptiScaler.ini, Dx12Upscaler=dlss, launch options kept."
+                      : helix?.setting_up
+                        ? `Setting up… ${helix.message || "downloading and building."}`
+                        : "One-time setup (pinned release, verified, built on this Deck), then the per-game install. Reinstalls are clean: the ini journal always keeps the true originals."
                 }
-                checked={withHelixSetup}
-                disabled={busy || helix?.ready || helix?.setting_up}
+                checked={withHelix}
+                disabled={busy || helix?.setting_up}
                 bottomSeparator="standard"
-                onChange={setWithHelixSetup}
+                onChange={setWithHelix}
               />
             </PanelSectionRow>
             {helix?.setting_up ? (
@@ -1108,20 +1108,6 @@ export function SetupChecklist({
                 </ButtonItem>
               </PanelSectionRow>
             ) : null}
-            <PanelSectionRow>
-              <ToggleField
-                label={
-                  <StepLabel n={next()} done={helixGame?.installed}>
-                    Install HelixSR for this game
-                  </StepLabel>
-                }
-                description="Puts nvngx.dll next to OptiScaler.ini, sets Dx12Upscaler=dlss, and adds the launch options — your previous ones are kept and put back on removal."
-                checked={withHelixInstall}
-                disabled={busy}
-                bottomSeparator="standard"
-                onChange={setWithHelixInstall}
-              />
-            </PanelSectionRow>
 
             {!detail.writable ? (
               <PanelSectionRow>

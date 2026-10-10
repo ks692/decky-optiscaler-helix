@@ -341,13 +341,21 @@ def game_status(target_dir: Path, state_dir: Path) -> dict:
 
 
 def install(ini_dir: Path, nvngx_src: Path) -> str:
-    """Deploy HelixSR for one game; journal ini changes for uninstall."""
+    """Deploy HelixSR for one game; journal ini changes for uninstall.
+
+    Idempotent: reinstalling first removes the previous HelixSR cleanly
+    (restoring the ini from its journal), so the journal always keeps the
+    true original values and nothing of OptiScaler's is ever touched.
+    """
     ini_dir = _resolve_ini_dir(Path(ini_dir))
     ini_path = ini_dir / C.OPTISCALER_INI
     helix_dir = ini_dir / C.HELIX_DIRNAME
     dll_path = _helix_dll_path(ini_dir)
     if dll_path.is_file():
-        raise HelixError("HelixSR is already installed for this game")
+        try:
+            uninstall(ini_dir)
+        except HelixError:
+            shutil.rmtree(helix_dir, ignore_errors=True)
 
     ini = IniFile(ini_path)
     previous = {

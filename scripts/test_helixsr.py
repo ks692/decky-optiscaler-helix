@@ -101,7 +101,12 @@ async def main():
         again = await service.games()
         check("reports installed after install", again["games"][0]["helix_installed"])
         duplicate = await service.install(str(bindir))
-        check("second install refused", not duplicate["ok"])
+        check("reinstall succeeds", duplicate["ok"])
+        ini_text2 = (bindir / "OptiScaler.ini").read_text()
+        check("reinstall keeps dlss settings", "Dx12Upscaler=dlss" in ini_text2)
+        journal = json.loads((bindir / "HelixSR" / C.JOURNAL_NAME).read_text())
+        check("journal still holds the true originals",
+              journal["previous"].get(C.INI_DX12_KEY) == "auto")
 
         # uninstall restores
         removed = await service.uninstall(str(bindir))
