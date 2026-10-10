@@ -153,11 +153,11 @@ function HelixVersionRow({ helix, busy, refresh }: Readonly<{
   return (
     <PanelSectionRow>
       <ToggleField
-        label="Use the latest HelixSR release"
+        label="Use the latest DLSS 3.7 release"
         description={
           helix?.use_latest
             ? "The next setup downloads the newest upstream release. The checksum is verified only for known releases — an unknown one proceeds unverified, and the setup log says so."
-            : `Pinned to HelixSR ${helix?.version ?? "1.5.1"} with a verified checksum. Applies to the next setup run.`
+            : `Pinned to DLSS 3.7 ${helix?.version ?? "1.5.1"} with a verified checksum. Applies to the next setup run.`
         }
         checked={!!helix?.use_latest}
         disabled={busy || !!helix?.setting_up}
@@ -194,7 +194,7 @@ function HelixSetupStatus({ helix }: Readonly<{ helix: HelixStatus | null }>) {
   return (
     <PanelSectionRow>
       <Field
-        label={`HelixSR status: ${phaseLabel[helix.phase] ?? helix.phase}`}
+        label={`DLSS 3.7 status: ${phaseLabel[helix.phase] ?? helix.phase}`}
         description={helix.message || undefined}
         bottomSeparator="standard"
         childrenLayout="inline"
@@ -493,10 +493,10 @@ export function SetupChecklist({
     if (!st?.setting_up) {
       const started = await helixSetup().catch(() => ({ ok: false }));
       if (!started.ok) {
-        toaster.toast({ title: "HelixSR setup failed to start", body: "Try again." });
+        toaster.toast({ title: "DLSS 3.7 setup failed to start", body: "Try again." });
         return false;
       }
-      toaster.toast({ title: "HelixSR setup started", body: "Downloading and building — this takes a few minutes." });
+      toaster.toast({ title: "DLSS 3.7 setup started", body: "Downloading and building — this takes a few minutes." });
     }
     for (;;) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -504,7 +504,7 @@ export function SetupChecklist({
       if (!s || !s.setting_up) {
         await refreshHelix();
         if (s?.ready) return true;
-        toaster.toast({ title: "HelixSR setup failed", body: s?.message || "Try again." });
+        toaster.toast({ title: "DLSS 3.7 setup failed", body: s?.message || "Try again." });
         return false;
       }
     }
@@ -514,7 +514,7 @@ export function SetupChecklist({
   const installHelixGame = async (iniDir: string): Promise<boolean> => {
     const result = await helixInstall(iniDir);
     if (!result.ok) {
-      toaster.toast({ title: "HelixSR install failed", body: String(result.error ?? "") });
+      toaster.toast({ title: "DLSS 3.7 install failed", body: String(result.error ?? "") });
       return false;
     }
     // Record what Steam had before us, then add the HelixSR entries in front
@@ -524,7 +524,7 @@ export function SetupChecklist({
     const next = addHelixEnv(current);
     if (appid && next !== (current ?? "").trim() && !setLaunchOptions(Number(appid), next)) {
       toaster.toast({
-        title: "HelixSR installed",
+        title: "DLSS 3.7 installed",
         body: `The launch options could not be written from here — add this yourself: ${HELIX_ENV} %command%`,
       });
     }
@@ -551,7 +551,7 @@ export function SetupChecklist({
         if (choice && choice.value !== null) setLaunchOptions(Number(appid), choice.value);
       }
       await helixForgetLaunchOptions(iniDir).catch(() => null);
-      toaster.toast({ title: "HelixSR removed", body: String(result.message ?? "") });
+      toaster.toast({ title: "DLSS 3.7 removed", body: String(result.message ?? "") });
       await refreshHelix();
       await onChanged();
     } finally {
@@ -584,7 +584,7 @@ export function SetupChecklist({
       const gs = await helixGameStatus(detail.target).catch(() => null);
       if (gs?.ok && gs.ready && gs.ini_dir && !gs.installed) {
         if (await installHelixGame(gs.ini_dir)) {
-          toaster.toast({ title: "HelixSR installed", body: detail.name });
+          toaster.toast({ title: "DLSS 3.7 installed", body: detail.name });
         }
       }
       await refreshHelix();
@@ -726,14 +726,14 @@ export function SetupChecklist({
           }
         } else {
           helixSkipped = true;
-          toaster.toast({ title: "HelixSR skipped", body: "The one-time setup did not finish." });
+          toaster.toast({ title: "DLSS 3.7 skipped", body: "The one-time setup did not finish." });
         }
         await refreshHelix();
       }
       toaster.toast({
         title: `${detail.name} is set up`,
         body: helixSkipped
-          ? "OptiScaler is in; HelixSR was skipped."
+          ? "OptiScaler is in; DLSS 3.7 was skipped."
           : `Installed as ${planned.filename}.`,
       });
       await onChanged();
@@ -1153,14 +1153,14 @@ export function SetupChecklist({
               <ToggleField
                 label={
                   <StepLabel n={next()} done={helixGame?.installed}>
-                    Set up HelixSR and install it for this game
+                    Set up DLSS 3.7 and install it for this game
                   </StepLabel>
                 }
                 description={
                   helixGame?.installed
-                    ? "HelixSR is installed for this game — running again reinstalls it cleanly."
+                    ? "DLSS 3.7 is installed for this game — running again reinstalls it cleanly."
                     : helix?.ready
-                      ? "Installs HelixSR for this game: nvngx.dll next to OptiScaler.ini, Dx12Upscaler=dlss, launch options kept."
+                      ? "Installs DLSS 3.7 for this game: nvngx.dll next to OptiScaler.ini, Dx12Upscaler=dlss, launch options kept."
                       : helix?.setting_up
                         ? `Setting up… ${helix.message || "downloading and building."}`
                         : "One-time setup (pinned release, verified, built on this Deck), then the per-game install. Reinstalls are clean: the ini journal always keeps the true originals."
@@ -1181,7 +1181,7 @@ export function SetupChecklist({
                   // the setup runs is no cancel button at all.
                   onClick={() => void helixCancelSetup().then(() => refreshHelix())}
                 >
-                  Cancel HelixSR setup
+                  Cancel DLSS 3.7 setup
                 </ButtonItem>
               </PanelSectionRow>
             ) : null}
@@ -1296,7 +1296,7 @@ export function SetupChecklist({
           <PanelSectionRow>
             {helixGame.installed ? (
               <ToggleField
-                label={<StepLabel done>HelixSR installed</StepLabel>}
+                label={<StepLabel done>DLSS 3.7 installed</StepLabel>}
                 description="DLSS Model E upscaling through OptiScaler's DLSS backend. Turn off to remove it — the launch options question follows."
                 checked
                 disabled={busy}
@@ -1305,11 +1305,11 @@ export function SetupChecklist({
               />
             ) : (
               <Field
-                label={<StepLabel>Add HelixSR</StepLabel>}
+                label={<StepLabel>Add DLSS 3.7</StepLabel>}
                 description={
                   helix?.ready
                     ? "DLSS Model E upscaling through OptiScaler's DLSS backend."
-                    : "Needs the one-time HelixSR setup first — it starts when you install."
+                    : "Needs the one-time DLSS 3.7 setup first — it starts when you install."
                 }
                 focusable={!busy}
                 bottomSeparator="standard"

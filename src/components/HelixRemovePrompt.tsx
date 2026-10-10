@@ -32,7 +32,7 @@ export function HelixRemovePrompt({
 
   return (
     <ConfirmModal
-      strTitle="Remove HelixSR?"
+      strTitle="Remove DLSS 3.7?"
       strOKButtonText="Remove"
       strCancelButtonText="Keep it"
       closeModal={closeModal}
@@ -59,7 +59,7 @@ export function HelixRemovePrompt({
 
       {asked && chosen?.action === "restore" ? (
         <Notice tone="info">
-          The launch options the game had before HelixSR are put back verbatim.
+          The launch options the game had before DLSS 3.7 are put back verbatim.
         </Notice>
       ) : null}
     </ConfirmModal>

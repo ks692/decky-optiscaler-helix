@@ -33,7 +33,7 @@ export function HelixSetupLogModal({ closeModal }: Readonly<{ closeModal?: () =>
         gap: "10px",
       }}
     >
-      <div style={{ fontSize: "17px", fontWeight: 700 }}>HelixSR setup log</div>
+      <div style={{ fontSize: "17px", fontWeight: 700 }}>DLSS 3.7 setup log</div>
       <div
         style={{
           maxHeight: "52vh",
