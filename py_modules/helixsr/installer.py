@@ -97,6 +97,13 @@ def download_release(state_dir: Path, cancelled: threading.Event) -> Path:
         source = Path(temp) / C.ARCHIVE_ROOT
         if not (source / C.SETUP_SCRIPT).is_file():
             raise HelixError("Unexpected release layout")
+        # Upstream's zip carries the exec bit on launch_synth, but extraction
+        # does not always preserve it (seen on Deck: PermissionError). The
+        # setup executes these directly, so make it explicit.
+        for exe in (source / "setup" / "lib" / "model" / "launch_synth",
+                    source / C.SETUP_SCRIPT):
+            if exe.is_file():
+                exe.chmod(exe.stat().st_mode | 0o111)
         runtime.parent.mkdir(parents=True, exist_ok=True)
         if runtime.exists():
             shutil.rmtree(runtime)
